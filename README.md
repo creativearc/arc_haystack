@@ -42,7 +42,7 @@ Lists all templates, partials, and variables used to generate the current page.
 
 #### Tag Pair Usage
 
-```html
+```
 {exp:arc_haystack:templates include="all"}
     <li>{template_path} ({template_type})</li>
 {/exp:arc_haystack:templates}
@@ -64,19 +64,19 @@ Lists all templates, partials, and variables used to generate the current page.
 
 Outputs an unordered HTML list:
 
-```html
+```
 {exp:arc_haystack:templates format="list"}
 ```
 
 Outputs a JSON array:
 
-```html
+```
 {exp:arc_haystack:templates format="json"}
 ```
 
 Outputs comma-separated values:
 
-```html
+```
 {exp:arc_haystack:templates format="comma"}
 ```
 
@@ -84,7 +84,7 @@ Outputs comma-separated values:
 
 **Display all templates in a debug panel:**
 
-```html
+```
 <div class="debug-templates">
     <h3>Templates Used on This Page</h3>
     <ul>
@@ -100,7 +100,7 @@ Outputs comma-separated values:
 
 **Get JSON for JavaScript consumption:**
 
-```html
+```
 <script>
     var templatesUsed = {exp:arc_haystack:templates format="json"};
     console.log('Templates on this page:', templatesUsed);
@@ -109,7 +109,7 @@ Outputs comma-separated values:
 
 **Show only partials/snippets:**
 
-```html
+```
 {exp:arc_haystack:templates include="partials"}
     Partial: {template_name}<br>
 {/exp:arc_haystack:templates}
@@ -140,7 +140,7 @@ None.
 
 Place this tag at the end of your layout template or main template for best results:
 
-```html
+```
 {!-- At the bottom of your layout template --}
 {exp:arc_haystack:log}
 ```
@@ -191,7 +191,7 @@ Returns detailed information about a specific template.
 
 #### Tag Pair Example
 
-```html
+```
 {exp:arc_haystack:template_info template="blog/entry"}
     <div class="template-info">
         <h2>{template_path}</h2>
@@ -219,13 +219,13 @@ Returns detailed information about a specific template.
 
 Get template info as JSON:
 
-```html
+```
 {exp:arc_haystack:template_info template="blog/entry" format="json"}
 ```
 
 Look up by template ID:
 
-```html
+```
 {exp:arc_haystack:template_info template_id="42" format="json"}
 ```
 
@@ -276,7 +276,7 @@ Each log entry detail view shows:
 
 Add the templates tag to a debug partial that only displays for super admins:
 
-```html
+```
 {if logged_in_group_id == 1}
 <div id="template-debug" style="background:#333;color:#0f0;padding:10px;font-family:monospace;font-size:12px;">
     <strong>Templates:</strong>
@@ -300,7 +300,7 @@ Use the logging feature to build a picture of which templates are actually being
 
 When debugging a page with multiple nested embeds and layouts, use the JSON output:
 
-```html
+```
 <script>
 console.table({exp:arc_haystack:templates format="json"});
 </script>
