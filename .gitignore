@@ -1,0 +1,12 @@
+/system/user/config/
+/system/user/language/
+/system/user/templates/
+/system/ee/
+/system/index.html
+/system/index.php
+/httpdocs/images/
+/httpdocs/admin.php
+/httpdocs/index.php
+/httpdocs/favicon.ico
+/httpdocs/.htaccess
+/httpdocs/themes/

@@ -62,14 +62,21 @@ Lists all templates, partials, and variables used to generate the current page.
 
 #### Single Tag Usage
 
+Outputs an unordered HTML list:
+
 ```html
-{!-- Outputs an unordered HTML list --}
 {exp:arc_haystack:templates format="list"}
+```
 
-{!-- Outputs JSON array --}
+Outputs a JSON array:
+
+```html
 {exp:arc_haystack:templates format="json"}
+```
 
-{!-- Outputs comma-separated values --}
+Outputs comma-separated values:
+
+```html
 {exp:arc_haystack:templates format="comma"}
 ```
 
@@ -191,22 +198,16 @@ Returns detailed information about a specific template.
         <dl>
             <dt>Template ID</dt>
             <dd>{template_id}</dd>
-
             <dt>Type</dt>
             <dd>{template_type}</dd>
-
             <dt>Lines of Code</dt>
             <dd>{line_count}</dd>
-
             <dt>PHP Enabled</dt>
             <dd>{allow_php}</dd>
-
             <dt>Cache Enabled</dt>
             <dd>{cache_enabled}</dd>
-
             <dt>Hit Count</dt>
             <dd>{hits}</dd>
-
             <dt>Last Modified</dt>
             <dd>{last_edit_date}</dd>
         </dl>
@@ -216,11 +217,15 @@ Returns detailed information about a specific template.
 
 #### Single Tag Examples
 
-```html
-{!-- Get template info as JSON --}
-{exp:arc_haystack:template_info template="blog/entry" format="json"}
+Get template info as JSON:
 
-{!-- Look up by template ID --}
+```html
+{exp:arc_haystack:template_info template="blog/entry" format="json"}
+```
+
+Look up by template ID:
+
+```html
 {exp:arc_haystack:template_info template_id="42" format="json"}
 ```
 
