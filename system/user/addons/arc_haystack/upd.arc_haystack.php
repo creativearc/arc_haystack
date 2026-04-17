@@ -8,8 +8,13 @@ use ExpressionEngine\Service\Addon\Installer;
 
 class Arc_haystack_upd extends Installer
 {
-    public $has_cp_backend = 'y';
+    public $has_cp_backend    = 'y';
     public $has_publish_fields = 'n';
+
+    public $methods = [
+        ['hook' => 'template_fetch_template', 'priority' => 10, 'enabled' => 'y'],
+        ['hook' => 'template_post_parse',     'priority' => 10, 'enabled' => 'y'],
+    ];
 
     public function install()
     {
@@ -43,6 +48,10 @@ class Arc_haystack_upd extends Installer
 
         if (version_compare($current, '1.5.0', '<')) {
             $this->createSettingsTable();
+        }
+
+        if (version_compare($current, '1.6.0', '<')) {
+            $this->activate_extension();
         }
 
         return true;

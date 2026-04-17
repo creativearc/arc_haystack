@@ -20,12 +20,24 @@ $lang = [
 
     // Settings
     'logging_enabled' => 'Logging Enabled',
-    'logging_enabled_desc' => 'When disabled, the {exp:arc_haystack:log} tag will not record any data.',
+    'logging_enabled_desc' => 'When disabled, all activity tracking stops. The Usage Grid will show no active templates, and no log entries will be recorded.',
     'enabled' => 'Enabled',
     'save' => 'Save',
     'settings_saved' => 'Settings Saved',
 
     // Index view
+    'template_usage_grid'   => 'Template Usage Grid',
+    'template_group'        => 'Template Group',
+    'name'                  => 'Name',
+    'type'                  => 'Type',
+    'active'                => 'Active',
+    'no_templates_found'    => 'No templates found in the database.',
+    'filter'                => 'Filter',
+    'filter_all_types'      => 'All Types',
+    'filter_all'            => 'All',
+    'filter_active_yes'     => 'Active: Yes',
+    'filter_active_empty'   => 'Active: Empty',
+    'export_grid_description' => 'Export the Template Usage Grid as CSV or XML.',
     'template_usage_logs' => 'Template Usage Logs',
     'log_entries' => 'log entries',
     'clear_all_logs' => 'Clear All Logs',

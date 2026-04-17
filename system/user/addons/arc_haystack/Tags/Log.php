@@ -7,6 +7,9 @@ use ExpressionEngine\Service\Addon\Controllers\Tag\AbstractRoute;
 
 class Log extends AbstractRoute
 {
+    // Signals to Arc_haystack_ext that this request was already logged by the tag
+    public static $didLog = false;
+
     /**
      * {exp:arc_haystack:log}
      *
@@ -59,6 +62,11 @@ class Log extends AbstractRoute
         }
 
         ee()->db->insert('arc_haystack_logs', $data);
+
+        self::$didLog = true;
+        if (class_exists('Arc_haystack_ext')) {
+            \Arc_haystack_ext::$tagDidLog = true;
+        }
 
         return '';
     }

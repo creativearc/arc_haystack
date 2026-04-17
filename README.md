@@ -1,6 +1,6 @@
 # ARC Haystack
 
-**Version:** 1.5.0
+**Version:** 1.6.0
 **Author:** CreativeArc
 **Compatibility:** ExpressionEngine 6.x+
 
@@ -13,8 +13,10 @@ ARC Haystack is a development and debugging addon for ExpressionEngine that prov
 - **Template Tracking** - Identify all templates (main, embeds, layouts) used to render a page
 - **Partial/Snippet Detection** - Track which snippets are utilized
 - **Global Variable Tracking** - List all global variables referenced
+- **Template Usage Grid** - See every template, partial, and variable in your site alongside its last-seen activity status
+- **Automatic Logging** - Extension hooks log template activity without requiring a tag in every template
 - **Database Logging** - Optionally log template usage for later analysis
-- **Control Panel Interface** - Browse and analyze logged page views
+- **Control Panel Interface** - Browse and analyze logged page views with sortable columns
 - **Pages/Structure Support** - Works with Pages module URL mappings
 
 ---
@@ -235,18 +237,50 @@ Look up by template ID:
 
 Access the control panel interface at: **Add-Ons → ARC Haystack**
 
-### Log Index
+### Logging Toggle
 
-- Paginated list of all logged page views (50 per page)
-- Displays: Main Template, Page URL, Embed Count, Partial Count, Variable Count, Timestamp
-- Click "View" to see full details for any log entry
-- "Export Log" button to download log entries as CSV or XML
-- "Clear All Logs" button to purge the log table
-- Toggle to enable or disable logging without uninstalling
+At the top of the dashboard is a toggle to enable or disable all activity tracking without uninstalling the addon. When disabled, all tracking stops — the Usage Grid will show no active templates, and no log entries will be recorded.
+
+### Template Usage Grid
+
+A full inventory of every template, partial, and variable in your EE installation, with activity status derived from log data.
+
+- Filterable by type (Template, Partial, Variable) and active status (All, Active, Never Seen)
+- Columns are sortable: Template Group, Name, Type, Active, Last Seen
+- **Active** and **Last Seen** columns are populated only when logging is enabled
+- **Export** button downloads the current filtered grid as CSV or XML
+
+#### What populates the grid
+
+| Column | Source |
+|--------|--------|
+| Template Group, Name, Type | EE database — always visible, no logging required |
+| Active | Derived from log entries — requires logging enabled |
+| Last Seen | Most recent log timestamp — requires logging enabled |
+
+### Template Usage Logs
+
+A paginated list of all recorded page views (50 per page), with sortable columns.
+
+- Sortable by: Main Template, Page URL, Logged At
+- Click **View** to see full details for any log entry
+- **Export Log** button to download log entries as CSV or XML
+- **Clear All Logs** button to purge the log table
+
+#### What gets logged and how
+
+Two mechanisms write to the log table. They do not duplicate — if the tag fires, the extension skips that request.
+
+| Mechanism | Captures | Requirement |
+|-----------|----------|-------------|
+| **Extension hooks** (automatic) | Main template, embeds, page URL, timestamp | Logging enabled — no tag placement needed |
+| **`{exp:arc_haystack:log}` tag** | Everything above, plus: layout template, called-from template, partials, variables | Logging enabled + tag placed in templates |
+
+For full tracking of partials and variables, place `{exp:arc_haystack:log}` in your main layout template.
 
 ### Export Log
 
-The "Export Log" button opens an export form with the following options:
+The **Export Log** button (in the Template Usage Logs panel) opens an export form with the following options:
 
 | Option | Description |
 |--------|-------------|
@@ -255,7 +289,7 @@ The "Export Log" button opens an export form with the following options:
 | End Date/Time | Only include entries on or before this date |
 | Limit | Maximum number of records to export (leave blank for all) |
 
-All filters are optional. The exported file includes one row/entry per logged page view with: Main Template, Layout, Page URL, Embeds, Partials, Variables, and Logged At.
+All filters are optional. The exported file includes one row per logged page view with: Main Template, Layout, Page URL, Embeds, Partials, Variables, and Logged At.
 
 ### Log Detail View
 
@@ -328,6 +362,14 @@ The addon creates a `arc_haystack_logs` table:
 ---
 
 ## Changelog
+
+### 1.6.0
+- Added **Template Usage Grid** — a full inventory of every template, partial, and variable with activity status (active/last seen) derived from log data
+- Added **automatic extension-based logging** via `template_fetch_template` and `template_post_parse` hooks — basic template activity is now recorded without placing the log tag in every template
+- Added **grid export** (CSV or XML) for the filtered Template Usage Grid
+- Added **sortable column headings** in both the Usage Grid and the Template Usage Logs table
+- Added filtering in the Usage Grid by type (Template, Partial, Variable) and active status
+- Updated logging toggle description to reflect that all activity tracking (grid and logs) stops when disabled
 
 ### 1.5.0
 - Added persistent settings storage via `arc_haystack_settings` database table
