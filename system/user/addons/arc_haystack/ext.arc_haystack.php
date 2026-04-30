@@ -14,8 +14,9 @@ class Arc_haystack_ext
     // Set to true by the Log tag so the extension skips writing for that request
     public static $tagDidLog = false;
 
-    private static $fetchedPaths = [];
-    private static $didWrite     = false;
+    private static $fetchedPaths    = [];
+    private static $templateContent = [];
+    private static $didWrite        = false;
 
     /**
      * Fires each time EE loads a template from the database (main template,
@@ -33,6 +34,10 @@ class Arc_haystack_ext
 
         if ($group !== '' && $template !== '') {
             self::$fetchedPaths[] = $group . '/' . $template;
+        }
+
+        if (! empty($row['template_data'])) {
+            self::$templateContent[] = $row['template_data'];
         }
 
         return ee()->extensions->last_call !== false ? ee()->extensions->last_call : $row;
@@ -71,12 +76,42 @@ class Arc_haystack_ext
         $scheme  = (! empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $pageUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . ($_SERVER['REQUEST_URI'] ?? '/');
 
+        $allContent = implode("\n", self::$templateContent);
+
+        $snippets = ee()->db->select('snippet_name')
+            ->where_in('site_id', [(int) $siteId, 0])
+            ->get('snippets')
+            ->result_array();
+
+        $partialsUsed = [];
+        foreach ($snippets as $s) {
+            $name = $s['snippet_name'];
+            if (strpos($allContent, '{' . $name . '}') !== false) {
+                $partialsUsed[] = $name;
+            }
+        }
+
+        $gvars = ee()->db->select('variable_name')
+            ->where_in('site_id', [(int) $siteId, 0])
+            ->get('global_variables')
+            ->result_array();
+
+        $variablesUsed = [];
+        foreach ($gvars as $v) {
+            $name = $v['variable_name'];
+            if (strpos($allContent, '{' . $name . '}') !== false) {
+                $variablesUsed[] = $name;
+            }
+        }
+
         ee()->db->insert('arc_haystack_logs', [
-            'template_path' => $mainTemplate,
-            'main_template' => $mainTemplate,
-            'page_url'      => substr($pageUrl, 0, 2048),
-            'embeds_used'   => ! empty($embeds) ? json_encode($embeds) : null,
-            'logged_at'     => time(),
+            'template_path'  => $mainTemplate,
+            'main_template'  => $mainTemplate,
+            'page_url'       => substr($pageUrl, 0, 2048),
+            'embeds_used'    => ! empty($embeds) ? json_encode($embeds) : null,
+            'partials_used'  => ! empty($partialsUsed) ? json_encode($partialsUsed) : null,
+            'variables_used' => ! empty($variablesUsed) ? json_encode($variablesUsed) : null,
+            'logged_at'      => time(),
         ]);
 
         return $out;

@@ -13,7 +13,7 @@ class Export extends AbstractRoute
     {
         $vars = [
             'export_url' => ee('CP/URL')->make('addons/settings/arc_haystack/export'),
-            'back_url' => ee('CP/URL')->make('addons/settings/arc_haystack'),
+            'back_url' => ee('CP/URL')->make('addons/settings/arc_haystack/logs'),
         ];
 
         // POST request triggers download

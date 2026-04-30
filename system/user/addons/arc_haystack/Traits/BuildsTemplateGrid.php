@@ -50,21 +50,51 @@ trait BuildsTemplateGrid
             ORDER BY FIELD(row_type, 'template', 'embed', 'partial', 'variable'), group_name ASC, name ASC
         ")->result_array();
 
-        // Latest log timestamp per template path (for templates/embeds)
-        $latestLogs = ee()->db->query("
-            SELECT l.main_template, l.logged_at
-            FROM {$dbp}arc_haystack_logs l
-            INNER JOIN (
-                SELECT main_template, MAX(logged_at) AS max_logged
-                FROM {$dbp}arc_haystack_logs
-                WHERE main_template IS NOT NULL AND main_template != ''
-                GROUP BY main_template
-            ) lm ON l.main_template = lm.main_template AND l.logged_at = lm.max_logged
+        // Latest log timestamp per template path — seeds from main_template
+        $mainLogs = ee()->db->query("
+            SELECT main_template, MAX(logged_at) AS logged_at
+            FROM {$dbp}arc_haystack_logs
+            WHERE main_template IS NOT NULL AND main_template != ''
+            GROUP BY main_template
         ")->result_array();
 
         $logsByPath = [];
-        foreach ($latestLogs as $row) {
+        foreach ($mainLogs as $row) {
             $logsByPath[$row['main_template']] = (int) $row['logged_at'];
+        }
+
+        // Layout templates tracked by the Log tag
+        $layoutLogs = ee()->db->query("
+            SELECT layout_template, MAX(logged_at) AS logged_at
+            FROM {$dbp}arc_haystack_logs
+            WHERE layout_template IS NOT NULL AND layout_template != ''
+            GROUP BY layout_template
+        ")->result_array();
+
+        foreach ($layoutLogs as $row) {
+            $path = $row['layout_template'];
+            $ts   = (int) $row['logged_at'];
+            if (!isset($logsByPath[$path]) || $logsByPath[$path] < $ts) {
+                $logsByPath[$path] = $ts;
+            }
+        }
+
+        // Templates that appeared as embeds or layouts via extension-based logging
+        $embedLogs = ee()->db->query("
+            SELECT embeds_used, logged_at
+            FROM {$dbp}arc_haystack_logs
+            WHERE embeds_used IS NOT NULL AND embeds_used != ''
+            ORDER BY logged_at DESC
+        ")->result_array();
+
+        foreach ($embedLogs as $logRow) {
+            $ts    = (int) $logRow['logged_at'];
+            $paths = json_decode($logRow['embeds_used'], true) ?? [];
+            foreach ($paths as $path) {
+                if (!isset($logsByPath[$path])) {
+                    $logsByPath[$path] = $ts;
+                }
+            }
         }
 
         // Most recent log timestamp per partial/variable (scan JSON columns DESC)

@@ -22,7 +22,7 @@ class View extends AbstractRoute
                 ->defer();
 
             ee()->functions->redirect(
-                ee('CP/URL')->make('addons/settings/arc_haystack')->compile()
+                ee('CP/URL')->make('addons/settings/arc_haystack/logs')->compile()
             );
         }
 
@@ -40,7 +40,7 @@ class View extends AbstractRoute
                 ->defer();
 
             ee()->functions->redirect(
-                ee('CP/URL')->make('addons/settings/arc_haystack')->compile()
+                ee('CP/URL')->make('addons/settings/arc_haystack/logs')->compile()
             );
         }
 
@@ -108,7 +108,7 @@ class View extends AbstractRoute
             'embeds'           => $embedsInfo,
             'partials'         => $partialsInfo,
             'variables'        => $variablesInfo,
-            'back_url'         => ee('CP/URL')->make('addons/settings/arc_haystack'),
+            'back_url'         => ee('CP/URL')->make('addons/settings/arc_haystack/logs'),
         ];
 
         $this->setHeading(lang('log_details_title') . ': ' . $log['template_path']);

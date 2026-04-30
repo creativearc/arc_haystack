@@ -5,10 +5,14 @@ $lang = [
     'arc_haystack_module_description' => 'Provides detailed tracking of which templates, partials, and variables are used to generate a page',
 
     // Page titles and navigation
-    'arc_haystack_logs_title' => 'ARC Haystack Logs',
-    'log_details_title' => 'Log Details',
-    'clear_logs_title' => 'Clear Logs',
-    'back_to_logs' => 'Back to Logs',
+    'arc_haystack_logs_title'    => 'ARC Haystack',
+    'site_template_status_title' => 'Site Template Status',
+    'template_usage_logs_title'  => 'Template Usage Logs',
+    'nav_site_template_status'   => 'Site Template Status',
+    'nav_template_usage_logs'    => 'Template Usage Logs',
+    'log_details_title'          => 'Log Details',
+    'clear_logs_title'           => 'Clear Logs',
+    'back_to_logs'               => 'Back to Logs',
 
     // Alert messages
     'invalid_log' => 'Invalid Log',
@@ -26,7 +30,7 @@ $lang = [
     'settings_saved' => 'Settings Saved',
 
     // Index view
-    'template_usage_grid'   => 'Template Usage Grid',
+    'template_usage_grid'   => 'Site Template Status',
     'template_group'        => 'Template Group',
     'name'                  => 'Name',
     'type'                  => 'Type',
@@ -37,7 +41,7 @@ $lang = [
     'filter_all'            => 'All',
     'filter_active_yes'     => 'Active: Yes',
     'filter_active_empty'   => 'Active: Empty',
-    'export_grid_description' => 'Export the Template Usage Grid as CSV or XML.',
+    'export_grid_description' => 'Export the Site Template Status as CSV or XML.',
     'template_usage_logs' => 'Template Usage Logs',
     'log_entries' => 'log entries',
     'clear_all_logs' => 'Clear All Logs',

@@ -20,7 +20,7 @@ class Clear extends AbstractRoute
             ->defer();
 
         ee()->functions->redirect(
-            ee('CP/URL')->make('addons/settings/arc_haystack')->compile()
+            ee('CP/URL')->make('addons/settings/arc_haystack/logs')->compile()
         );
     }
 }
