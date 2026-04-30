@@ -11,6 +11,7 @@ ARC Haystack is a development and debugging addon for ExpressionEngine that prov
 ## Features
 
 - **Template Tracking** - Identify all templates (main, embeds, layouts) used to render a page
+- **Nested Layout Chain Detection** - Resolve parent layouts recursively (layout -> parent layout -> ...)
 - **Partial/Snippet Detection** - Track which snippets are utilized
 - **Global Variable Tracking** - List all global variables referenced
 - **Template Usage Grid** - See every template, partial, and variable in your site alongside its last-seen activity status
@@ -134,9 +135,11 @@ None.
 - All embeds used (including nested embeds)
 - All partials/snippets used
 - All global variables used
-- Main template and layout template
+- Main template and detected layout
 - Which template contained the log tag
 - Timestamp
+
+Note: `layout_template` stores the first detected layout path for the request. ARC Haystack resolves the full nested layout chain when rendering control panel views and status activity.
 
 #### Usage
 
@@ -235,11 +238,11 @@ Look up by template ID:
 
 ## Control Panel
 
-Access the control panel interface at: **Add-Ons → ARC Haystack**
+Access the control panel interface at: **Add-Ons -> ARC Haystack**
 
 ### Logging Toggle
 
-At the top of the dashboard is a toggle to enable or disable all activity tracking without uninstalling the addon. When disabled, all tracking stops — the Usage Grid will show no active templates, and no log entries will be recorded.
+At the top of the dashboard is a toggle to enable or disable all activity tracking without uninstalling the addon. When disabled, all tracking stops - the Usage Grid will show no active templates, and no log entries will be recorded.
 
 ### Template Usage Grid
 
@@ -249,6 +252,7 @@ A full inventory of every template, partial, and variable in your EE installatio
 - Columns are sortable: Template Group, Name, Type, Active, Last Seen
 - **Active** and **Last Seen** columns are populated only when logging is enabled
 - **Export** button downloads the current filtered grid as CSV or XML
+- Layout templates are marked active when they are found anywhere in logged items, including nested layout chains
 
 #### What populates the grid
 
@@ -262,18 +266,18 @@ A full inventory of every template, partial, and variable in your EE installatio
 
 A paginated list of all recorded page views (50 per page), with sortable columns.
 
-- Sortable by: Main Template, Page URL, Logged At
+- Sortable by: Page URL, Logged At
 - Click **View** to see full details for any log entry
 - **Export Log** button to download log entries as CSV or XML
 - **Clear All Logs** button to purge the log table
 
 #### What gets logged and how
 
-Two mechanisms write to the log table. They do not duplicate — if the tag fires, the extension skips that request.
+Two mechanisms write to the log table. They do not duplicate - if the tag fires, the extension skips that request.
 
 | Mechanism | Captures | Requirement |
 |-----------|----------|-------------|
-| **Extension hooks** (automatic) | Main template, embeds, page URL, timestamp | Logging enabled — no tag placement needed |
+| **Extension hooks** (automatic) | Main template, embeds, page URL, timestamp | Logging enabled - no tag placement needed |
 | **`{exp:arc_haystack:log}` tag** | Everything above, plus: layout template, called-from template, partials, variables | Logging enabled + tag placed in templates |
 
 For full tracking of partials and variables, place `{exp:arc_haystack:log}` in your main layout template.
@@ -296,7 +300,7 @@ All filters are optional. The exported file includes one row per logged page vie
 Each log entry detail view shows:
 
 - **Main Template** - The primary content template with metadata (ID, type, file path, line count, PHP status, revision count, access roles, cache settings, hit count)
-- **Layout Template** - The wrapping layout template (if used)
+- **Layout Template Details** - Full layout chain in order, rendered as stacked layout blocks (layout 1, layout 2, ...)
 - **Called From** - Which template contained the `{exp:arc_haystack:log}` tag
 - **Embeds Used** - All embedded templates with file paths, line counts, and direct edit links
 - **Partials Used** - All snippets with scope (Global/Site), file paths, and edit links
@@ -362,6 +366,12 @@ The addon creates a `arc_haystack_logs` table:
 ---
 
 ## Changelog
+
+### 1.6.1
+- Added nested layout chain detection for logging and template usage tag output
+- Updated status grid activity resolution so all layouts in logged chains can be marked active
+- Updated log detail view to display the complete layout chain as stacked layout blocks
+- Updated logs table to show `Layouts` count and removed `Main Template` column
 
 ### 1.6.0
 - Added **Template Usage Grid** — a full inventory of every template, partial, and variable with activity status (active/last seen) derived from log data
