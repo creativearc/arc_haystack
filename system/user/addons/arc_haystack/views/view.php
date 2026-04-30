@@ -148,8 +148,8 @@
 </div>
 
 <!-- Layout Template Info -->
-<?php $layoutTemplateVal = $log['layout_template'] ?? null; ?>
-<?php if ($layoutTemplateVal): ?>
+<?php $layoutTemplates = $layout_templates ?? []; ?>
+<?php if (!empty($layoutTemplates)): ?>
 <div class="panel">
     <div class="panel-heading">
         <div class="title-bar">
@@ -157,48 +157,55 @@
         </div>
     </div>
     <div class="panel-body">
-        <?php if (!empty($layout_template) && $layout_template['found']): ?>
-            <div class="table-responsive">
-                <table class="table-list">
-                    <tbody>
-                        <tr>
-                            <th style="width: 200px;"><?php echo lang('template_path'); ?></th>
-                            <td>
-                                <code><?php echo htmlspecialchars($layout_template['path']); ?></code>
-                                <a href="<?php echo $layout_template['edit_url']; ?>" class="button button--small button--default" style="margin-left: 10px;"><?php echo lang('edit_template'); ?></a>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php echo lang('file_location'); ?></th>
-                            <td><code><?php echo htmlspecialchars($layout_template['file_path']); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php echo lang('line_count'); ?></th>
-                            <td><?php echo number_format($layout_template['line_count']); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php echo lang('php_enabled'); ?></th>
-                            <td>
-                                <?php if ($layout_template['allow_php'] === 'y'): ?>
-                                    <span class="st-warning"><?php echo lang('yes'); ?></span>
-                                <?php else: ?>
-                                    <?php echo lang('no'); ?>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php echo lang('stored_revisions'); ?></th>
-                            <td><?php echo number_format($layout_template['revision_count']); ?></td>
-                        </tr>
-                    </tbody>
-                </table>
+        <?php foreach ($layoutTemplates as $idx => $layoutInfo): ?>
+            <div class="panel" style="margin-bottom: 12px;">
+                <div class="panel-heading">
+                    <div class="title-bar">
+                        <h3 class="title-bar__title">#<?php echo (int) $idx + 1; ?> <code><?php echo htmlspecialchars($layoutInfo['display_path'] ?? $layoutInfo['path'] ?? ''); ?></code></h3>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <?php if (!empty($layoutInfo['found'])): ?>
+                        <div class="table-responsive">
+                            <table class="table-list">
+                                <tbody>
+                                    <tr>
+                                        <th style="width: 200px;"><?php echo lang('file_location'); ?></th>
+                                        <td><code style="font-size: 11px;"><?php echo htmlspecialchars($layoutInfo['file_path']); ?></code></td>
+                                    </tr>
+                                    <tr>
+                                        <th><?php echo lang('line_count'); ?></th>
+                                        <td><?php echo number_format($layoutInfo['line_count']); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th><?php echo lang('php_enabled'); ?></th>
+                                        <td>
+                                            <?php if (($layoutInfo['allow_php'] ?? 'n') === 'y'): ?>
+                                                <span class="st-warning"><?php echo lang('yes'); ?></span>
+                                            <?php else: ?>
+                                                <?php echo lang('no'); ?>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <th><?php echo lang('stored_revisions'); ?></th>
+                                        <td><?php echo number_format($layoutInfo['revision_count']); ?></td>
+                                    </tr>
+                                    <tr>
+                                        <th><?php echo lang('actions'); ?></th>
+                                        <td>
+                                            <a href="<?php echo $layoutInfo['edit_url']; ?>" class="button button--small button--default"><?php echo lang('edit_template'); ?></a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p class="txt-muted"><?php echo sprintf(lang('template_not_found_error'), htmlspecialchars($layoutInfo['error'] ?? lang('unknown_error'))); ?></p>
+                    <?php endif; ?>
+                </div>
             </div>
-        <?php elseif (!empty($layout_template)): ?>
-            <p class="txt-muted"><?php echo sprintf(lang('template_not_found_error'), htmlspecialchars($layout_template['error'] ?? lang('unknown_error'))); ?></p>
-        <?php else: ?>
-            <p><?php echo lang('template_path'); ?>: <code><?php echo htmlspecialchars($layoutTemplateVal); ?></code></p>
-            <p class="txt-muted"><?php echo lang('unable_to_load_template_details'); ?></p>
-        <?php endif; ?>
+        <?php endforeach; ?>
     </div>
 </div>
 <?php endif; ?>

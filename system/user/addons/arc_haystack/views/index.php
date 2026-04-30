@@ -1,9 +1,10 @@
 <?php echo ee('CP/Alert')->getAllInlines(); ?>
 <?php
-function arcSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam, $dirParam) {
+function arcSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam, $dirParam)
+{
     $newDir = ($currentSort === $col && $currentDir === 'asc') ? 'desc' : 'asc';
-    $indicator = $currentSort === $col ? ($currentDir === 'asc' ? ' ▲' : ' ▼') : '';
-    $sep = strpos($baseUrl, '?') !== -1 ? '&' : '?';
+    $indicator = $currentSort === $col ? ($currentDir === 'asc' ? ' [^]' : ' [v]') : '';
+    $sep = strpos($baseUrl, '?') !== false ? '&' : '?';
     $url = $baseUrl . $sep . $sortParam . '=' . urlencode($col) . '&' . $dirParam . '=' . urlencode($newDir);
     return '<th><a href="' . htmlspecialchars($url) . '" style="color:inherit;text-decoration:none;white-space:nowrap;">' . htmlspecialchars($label) . $indicator . '</a></th>';
 }
@@ -55,7 +56,9 @@ function arcSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam
                     var dir    = <?php echo json_encode($grid_dir); ?>;
                     var sep    = base.indexOf('?') !== -1 ? '&' : '?';
                     var url    = base + sep + 'grid_type=' + encodeURIComponent(type) + '&grid_active=' + encodeURIComponent(active);
-                    if (sort) { url += '&grid_sort=' + encodeURIComponent(sort) + '&grid_dir=' + encodeURIComponent(dir); }
+                    if (sort) {
+                        url += '&grid_sort=' + encodeURIComponent(sort) + '&grid_dir=' + encodeURIComponent(dir);
+                    }
                     window.location.href = url;
                 }
                 </script>
@@ -99,7 +102,7 @@ function arcSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam
                                     <?php if ($row['logged_at']): ?>
                                         <?php echo htmlspecialchars($row['logged_at']); ?>
                                     <?php else: ?>
-                                        <span class="txt-muted">—</span>
+                                        <span class="txt-muted">-</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>

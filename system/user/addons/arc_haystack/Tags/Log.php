@@ -2,71 +2,39 @@
 
 namespace CreativeArc\ArcHaystack\Tags;
 
+use CreativeArc\ArcHaystack\Extensions\RequestState;
 use CreativeArc\ArcHaystack\Settings;
 use ExpressionEngine\Service\Addon\Controllers\Tag\AbstractRoute;
 
 class Log extends AbstractRoute
 {
-    // Signals to Arc_haystack_ext that this request was already logged by the tag
-    public static $didLog = false;
-
-    /**
-     * {exp:arc_haystack:log}
-     *
-     * Logs the current template path, page URL, embeds, partials, variables,
-     * and timestamp to the database.
-     * This tag outputs nothing and is intended for tracking template usage.
-     *
-     * Place this tag at the end of your layout or main template for best results.
-     */
     public function process()
     {
-        // Check if logging is enabled in addon settings
         $settings = Settings::get();
         if (($settings['logging_enabled'] ?? 'y') === 'n') {
             return '';
         }
 
-        $templatePath = $this->getCurrentTemplatePath();
-        $pageUrl = $this->getCurrentUrl();
-        $timestamp = ee()->localize->now;
+        $layoutTemplates = $this->detectLayoutTemplates();
+        $primaryLayout = $layoutTemplates[0] ?? null;
 
-        // Detect main template, layout, and where the tag was called from
-        $mainTemplate = $this->detectMainTemplate();
-        $layoutTemplate = $this->detectLayoutTemplate();
-        $calledFrom = $this->detectCalledFromTemplate();
-
-        // Gather embeds, partials, and variables
-        $embeds = $this->getUsedEmbeds();
-        $partials = $this->getUsedPartials();
+        $embeds    = $this->getUsedEmbeds();
+        $partials  = $this->getUsedPartials();
         $variables = $this->getUsedVariables();
 
-        // Check if the new columns exist (added in v1.3.0)
-        $fields = ee()->db->list_fields('arc_haystack_logs');
-        $hasNewColumns = in_array('main_template', $fields);
+        ee()->db->insert('arc_haystack_logs', [
+            'template_path'   => $this->getCurrentTemplatePath(),
+            'main_template'   => $this->detectMainTemplate(),
+            'layout_template' => $primaryLayout,
+            'called_from'     => $this->detectCalledFromTemplate(),
+            'page_url'        => $this->getCurrentUrl(),
+            'embeds_used'     => ! empty($embeds)    ? json_encode($embeds)    : null,
+            'partials_used'   => ! empty($partials)  ? json_encode($partials)  : null,
+            'variables_used'  => ! empty($variables) ? json_encode($variables) : null,
+            'logged_at'       => ee()->localize->now,
+        ]);
 
-        $data = [
-            'template_path'   => $templatePath,
-            'page_url'        => $pageUrl,
-            'embeds_used'     => json_encode($embeds),
-            'partials_used'   => json_encode($partials),
-            'variables_used'  => json_encode($variables),
-            'logged_at'       => $timestamp,
-        ];
-
-        // Add new columns if they exist
-        if ($hasNewColumns) {
-            $data['main_template'] = $mainTemplate;
-            $data['layout_template'] = $layoutTemplate;
-            $data['called_from'] = $calledFrom;
-        }
-
-        ee()->db->insert('arc_haystack_logs', $data);
-
-        self::$didLog = true;
-        if (class_exists('Arc_haystack_ext')) {
-            \Arc_haystack_ext::$tagDidLog = true;
-        }
+        RequestState::$tagDidLog = true;
 
         return '';
     }
@@ -95,89 +63,68 @@ class Log extends AbstractRoute
         return $protocol . $host . $uri;
     }
 
-    /**
-     * Get embeds used in the current page render
-     */
     protected function getUsedEmbeds(): array
     {
         $embeds = [];
-        $seen = [];
+        $seen   = [];
 
         $currentGroup = ee()->TMPL->group_name ?? '';
-        $currentName = ee()->TMPL->template_name ?? '';
+        $currentName  = ee()->TMPL->template_name ?? '';
 
-        // Parse template log for embed references
         $this->gatherEmbedsFromLog($embeds, $seen);
-
-        // Check ee()->TMPL->embed_vars for embed tracking
         $this->gatherEmbedsFromEmbedVars($embeds, $seen);
-
-        // Check templates_sofar property
         $this->gatherFromTemplatesSofar($embeds, $seen);
-
-        // Scan raw template content for embed tags
         $this->gatherEmbedsFromRawContent($embeds, $seen);
 
-        // Build a list of all templates that need to be scanned for embeds
         $templatesToScan = [];
 
-        // 1. Always include the current template
         if ($currentGroup && $currentName) {
             $templatesToScan[$currentGroup . '/' . $currentName] = [
                 'group' => $currentGroup,
-                'name' => $currentName,
+                'name'  => $currentName,
             ];
         }
 
-        // 2. Include the main template (if detected and different)
         $mainTemplate = $this->detectMainTemplate();
-        if ($mainTemplate && !isset($templatesToScan[$mainTemplate])) {
+        if ($mainTemplate && ! isset($templatesToScan[$mainTemplate])) {
             $parts = explode('/', $mainTemplate);
             if (count($parts) >= 2) {
-                $templatesToScan[$mainTemplate] = [
-                    'group' => $parts[0],
-                    'name' => $parts[1],
-                ];
+                $templatesToScan[$mainTemplate] = ['group' => $parts[0], 'name' => $parts[1]];
             }
         }
 
-        // 3. Include the layout template (if detected)
-        $layoutTemplate = $this->detectLayoutTemplate();
-        if ($layoutTemplate && !isset($templatesToScan[$layoutTemplate])) {
-            $parts = explode('/', $layoutTemplate);
+        $layoutTemplates = $this->detectLayoutTemplates();
+        foreach ($layoutTemplates as $layoutTemplate) {
+            if (isset($templatesToScan[$layoutTemplate])) {
+                continue;
+            }
+
+            $parts = explode('/', $layoutTemplate, 2);
             if (count($parts) >= 2) {
-                $templatesToScan[$layoutTemplate] = [
-                    'group' => $parts[0],
-                    'name' => $parts[1],
-                ];
+                $templatesToScan[$layoutTemplate] = ['group' => $parts[0], 'name' => $parts[1]];
             }
         }
 
-        // Scan all collected templates for embeds
         foreach ($templatesToScan as $templateInfo) {
             $this->gatherEmbedsFromTemplateFile($embeds, $seen, $templateInfo['group'], $templateInfo['name']);
         }
 
         return array_values(array_filter($embeds, function ($name) {
-            return !$this->containsTag($name);
+            return ! $this->containsTag($name);
         }));
     }
 
-    /**
-     * Gather embeds from the template log
-     */
     protected function gatherEmbedsFromLog(array &$embeds, array &$seen): void
     {
-        if (empty(ee()->TMPL->log) || !is_array(ee()->TMPL->log)) {
+        if (empty(ee()->TMPL->log) || ! is_array(ee()->TMPL->log)) {
             return;
         }
 
         foreach (ee()->TMPL->log as $logEntry) {
-            if (!is_string($logEntry)) {
+            if (! is_string($logEntry)) {
                 continue;
             }
 
-            // Match various embed reference patterns
             $patterns = [
                 '/Embed:\s*([^\/\s]+)\/([^\s\)\(]+)/i',
                 '/Processing Embed[:\s]+([^\/\s]+)\/([^\s\)\(]+)/i',
@@ -202,13 +149,9 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Gather embeds from embed_vars property
-     */
     protected function gatherEmbedsFromEmbedVars(array &$embeds, array &$seen): void
     {
-        // Check ee()->TMPL->embed_vars for embed tracking
-        if (!empty(ee()->TMPL->embed_vars) && is_array(ee()->TMPL->embed_vars)) {
+        if (! empty(ee()->TMPL->embed_vars) && is_array(ee()->TMPL->embed_vars)) {
             foreach (ee()->TMPL->embed_vars as $embedPath => $vars) {
                 if (is_string($embedPath) && strpos($embedPath, '/') !== false) {
                     if (!isset($seen[$embedPath])) {
@@ -233,9 +176,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Gather templates from templates_sofar property
-     */
     protected function gatherFromTemplatesSofar(array &$embeds, array &$seen): void
     {
         if (empty(ee()->TMPL->templates_sofar) || !is_array(ee()->TMPL->templates_sofar)) {
@@ -274,9 +214,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Scan raw template content for embed tags
-     */
     protected function gatherEmbedsFromRawContent(array &$embeds, array &$seen): void
     {
         $contentSources = [];
@@ -319,9 +256,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Scan a specific template file for embed tags
-     */
     protected function gatherEmbedsFromTemplateFile(array &$embeds, array &$seen, string $group, string $name): void
     {
         // First find the template group
@@ -374,9 +308,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Extract embed references from template content
-     */
     protected function extractEmbedsFromContent(string $content, array &$embeds, array &$seen): void
     {
         if (empty($content)) {
@@ -415,9 +346,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Get partials (snippets) used in the current page render
-     */
     protected function getUsedPartials(): array
     {
         $usedPartials = [];
@@ -455,9 +383,6 @@ class Log extends AbstractRoute
         return $usedPartials;
     }
 
-    /**
-     * Get global variables used in the current page render
-     */
     protected function getUsedVariables(): array
     {
         $usedVariables = [];
@@ -496,9 +421,6 @@ class Log extends AbstractRoute
         return $usedVariables;
     }
 
-    /**
-     * Gather file-based template variables from _variables folder
-     */
     protected function gatherFileBasedVariables(array &$usedVariables): void
     {
         $basePath = $this->getTemplateBasePath();
@@ -549,9 +471,6 @@ class Log extends AbstractRoute
         }
     }
 
-    /**
-     * Get the template base path with fallbacks
-     */
     protected function getTemplateBasePath(): ?string
     {
         // Try PATH_TMPL constant
@@ -578,9 +497,6 @@ class Log extends AbstractRoute
         return null;
     }
 
-    /**
-     * Parse template log for partials
-     */
     protected function getPartialsFromLog(): array
     {
         $used = [];
@@ -603,9 +519,6 @@ class Log extends AbstractRoute
         return $used;
     }
 
-    /**
-     * Parse template log for variables
-     */
     protected function getVariablesFromLog(): array
     {
         $used = [];
@@ -624,9 +537,6 @@ class Log extends AbstractRoute
         return $used;
     }
 
-    /**
-     * Check if a partial name appears in the template log
-     */
     protected function wasPartialUsedInLog(string $name): bool
     {
         if (!empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
@@ -639,9 +549,6 @@ class Log extends AbstractRoute
         return false;
     }
 
-    /**
-     * Check if a variable name appears in the template log
-     */
     protected function wasVariableUsedInLog(string $name): bool
     {
         if (!empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
@@ -654,10 +561,6 @@ class Log extends AbstractRoute
         return false;
     }
 
-    /**
-     * Check if a partial was actually used in the rendered templates
-     * by scanning template content for the partial tag
-     */
     protected function wasPartialUsedInTemplates(string $name): bool
     {
         $contentSources = $this->getTemplateContentSources();
@@ -674,11 +577,8 @@ class Log extends AbstractRoute
         return $this->wasPartialUsedInRawTemplateFiles($name);
     }
 
-    /**
-     * Check if a partial tag appears in the raw (unprocessed) template files on disk.
-     * This catches partials used in layout templates, which are fully processed before
-     * the log tag runs.
-     */
+    // Scans raw files because layout templates are fully parsed before the log tag runs,
+    // so {partial_name} tags no longer appear in TMPL properties at that point.
     protected function wasPartialUsedInRawTemplateFiles(string $name): bool
     {
         $pattern = '/\{' . preg_quote($name, '/') . '(?:\s|\})/i';
@@ -709,8 +609,11 @@ class Log extends AbstractRoute
             }
         }
 
-        $layoutTemplate = $this->detectLayoutTemplate();
-        if ($layoutTemplate && strpos($layoutTemplate, '/') !== false) {
+        foreach ($this->detectLayoutTemplates() as $layoutTemplate) {
+            if (strpos($layoutTemplate, '/') === false) {
+                continue;
+            }
+
             [$lg, $ln] = explode('/', $layoutTemplate, 2);
             if ($lg && $ln) {
                 $templatesToScan[] = [$lg, $ln];
@@ -730,10 +633,6 @@ class Log extends AbstractRoute
         return false;
     }
 
-    /**
-     * Check if a variable was actually used in the rendered templates
-     * by scanning template content for the variable tag
-     */
     protected function wasVariableUsedInTemplates(string $name): bool
     {
         $contentSources = $this->getTemplateContentSources();
@@ -747,9 +646,6 @@ class Log extends AbstractRoute
         return false;
     }
 
-    /**
-     * Get all template content sources for scanning
-     */
     protected function getTemplateContentSources(): array
     {
         $contentSources = [];
@@ -787,105 +683,177 @@ class Log extends AbstractRoute
         return array_filter($contentSources, 'is_string');
     }
 
-    /**
-     * Detect layout template from multiple EE sources
-     */
     protected function detectLayoutTemplate(): ?string
+    {
+        $layouts = $this->detectLayoutTemplates();
+        return $layouts[0] ?? null;
+    }
+
+    protected function detectLayoutTemplates(): array
+    {
+        $layouts = [];
+
+        $mainTemplate = $this->detectMainTemplate();
+        if ($mainTemplate) {
+            $layouts = $this->getNestedLayoutTemplates($mainTemplate);
+        }
+
+        if (empty($layouts)) {
+            $runtimeLayout = $this->detectSingleLayoutFromRuntime();
+            if ($runtimeLayout) {
+                $layouts = $this->getNestedLayoutTemplates($runtimeLayout, true);
+                array_unshift($layouts, $runtimeLayout);
+            }
+        }
+
+        return array_values(array_unique(array_filter($layouts, function ($path) {
+            return is_string($path) && strpos($path, '/') !== false;
+        })));
+    }
+
+    protected function getNestedLayoutTemplates(string $templatePath, bool $followFromSelf = false): array
+    {
+        $templatePath = $this->normalizeTemplatePath($templatePath);
+        if (! $templatePath) {
+            return [];
+        }
+
+        $chain = [];
+        $visited = [];
+        $current = $templatePath;
+
+        while ($current && ! isset($visited[$current])) {
+            $visited[$current] = true;
+            $parts = explode('/', $current, 2);
+            if (count($parts) !== 2) {
+                break;
+            }
+
+            $next = $this->findLayoutInTemplateFile($parts[0], $parts[1]);
+            $next = $next ? $this->normalizeTemplatePath($next) : null;
+
+            if (! $next || isset($visited[$next])) {
+                break;
+            }
+
+            $chain[] = $next;
+            $current = $next;
+        }
+
+        if ($followFromSelf && ! empty($chain) && $chain[0] === $templatePath) {
+            array_shift($chain);
+        }
+
+        return $chain;
+    }
+
+    protected function normalizeTemplatePath(?string $path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+        if ($path === '') {
+            return null;
+        }
+
+        if (strpos($path, '/') === false) {
+            return null;
+        }
+
+        [$group, $name] = explode('/', $path, 2);
+        $group = trim($group);
+        $name = trim($name);
+
+        if ($group === '' || $name === '') {
+            return null;
+        }
+
+        return $group . '/' . $name;
+    }
+
+    protected function detectSingleLayoutFromRuntime(): ?string
     {
         $currentGroup = ee()->TMPL->group_name ?? '';
         $currentName = ee()->TMPL->template_name ?? '';
 
-        // Method 1: Scan current template content for {layout=""} tag
-        // This works when the tag is called from within a content template
         $templateContent = ee()->TMPL->template ?? '';
-        if (!empty($templateContent)) {
-            if (preg_match('/\{layout=["\']([^"\']+)["\']/i', $templateContent, $matches)) {
-                return $matches[1];
-            }
+        if (! empty($templateContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $templateContent, $matches)) {
+            return $this->normalizeTemplatePath($matches[1]);
         }
 
-        // Method 2: Scan the current template FILE for {layout=""} tag
-        // This is needed when template content has already been partially processed
-        if ($currentGroup && $currentName && !$this->isLayoutTemplateByContent($currentGroup, $currentName)) {
+        if ($currentGroup && $currentName && ! $this->isLayoutTemplateByContent($currentGroup, $currentName)) {
             $layoutPath = $this->findLayoutInTemplateFile($currentGroup, $currentName);
             if ($layoutPath) {
-                return $layoutPath;
+                return $this->normalizeTemplatePath($layoutPath);
             }
         }
 
-        // Method 3: Check if the CURRENT template is itself a layout
-        // This is the case when the tag is placed inside a layout template
-        if ($currentGroup && $currentName) {
-            if ($this->isLayoutTemplateByContent($currentGroup, $currentName)) {
-                return $currentGroup . '/' . $currentName;
-            }
+        if ($currentGroup && $currentName && $this->isLayoutTemplateByContent($currentGroup, $currentName)) {
+            return $this->normalizeTemplatePath($currentGroup . '/' . $currentName);
         }
 
-        // Method 4: Check ee()->TMPL->layout_name (standard EE property)
-        if (!empty(ee()->TMPL->layout_name)) {
-            return ee()->TMPL->layout_name;
+        if (! empty(ee()->TMPL->layout_name)) {
+            return $this->normalizeTemplatePath(ee()->TMPL->layout_name);
         }
 
-        // Method 5: Check ee()->TMPL->layout property (EE7+ may use this)
-        if (!empty(ee()->TMPL->layout)) {
+        if (! empty(ee()->TMPL->layout)) {
             if (is_string(ee()->TMPL->layout)) {
-                return ee()->TMPL->layout;
+                return $this->normalizeTemplatePath(ee()->TMPL->layout);
             }
-            if (is_array(ee()->TMPL->layout) && !empty(ee()->TMPL->layout['template'])) {
-                return ee()->TMPL->layout['template'];
-            }
-        }
-
-        // Method 6: Check ee()->TMPL->layout_vars for layout info
-        if (!empty(ee()->TMPL->layout_vars) && is_array(ee()->TMPL->layout_vars)) {
-            if (!empty(ee()->TMPL->layout_vars['layout:template'])) {
-                return ee()->TMPL->layout_vars['layout:template'];
+            if (is_array(ee()->TMPL->layout) && ! empty(ee()->TMPL->layout['template'])) {
+                return $this->normalizeTemplatePath(ee()->TMPL->layout['template']);
             }
         }
 
-        // Method 7: Parse template log for layout references
-        if (!empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
+        if (! empty(ee()->TMPL->layout_vars) && is_array(ee()->TMPL->layout_vars) && ! empty(ee()->TMPL->layout_vars['layout:template'])) {
+            return $this->normalizeTemplatePath(ee()->TMPL->layout_vars['layout:template']);
+        }
+
+        if (! empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
             foreach (ee()->TMPL->log as $logEntry) {
-                if (is_string($logEntry)) {
-                    // Match "Layout Template: group/template" or similar
-                    if (preg_match('/Layout(?:\s+Template)?[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
-                    // Match "Processing Layout: group/template"
-                    if (preg_match('/Processing Layout[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
-                    // Match "{layout="group/template"}" pattern in log
-                    if (preg_match('/\{layout=["\']?([^\/\s"\']+)\/([^\s"\'\}]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
+                if (! is_string($logEntry)) {
+                    continue;
+                }
+
+                if (preg_match('/Layout(?:\s+Template)?[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
+                }
+                if (preg_match('/Processing Layout[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
+                }
+                if (preg_match('/\{layout=["\']?([^\/\s"\']+)\/([^\s"\'\}]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
                 }
             }
         }
 
-        // Method 8: Scan the main template file for {layout=""} tag (from Pages module)
         $mainTemplate = $this->findTemplateFromPagesModule();
         if ($mainTemplate) {
-            $parts = explode('/', $mainTemplate);
-            if (count($parts) >= 2) {
+            $parts = explode('/', $mainTemplate, 2);
+            if (count($parts) === 2) {
                 $layoutPath = $this->findLayoutInTemplateFile($parts[0], $parts[1]);
                 if ($layoutPath) {
-                    return $layoutPath;
+                    return $this->normalizeTemplatePath($layoutPath);
                 }
             }
         }
 
-        // Method 9: Check templates_sofar for content templates and scan for layout tags
-        if (!empty(ee()->TMPL->templates_sofar) && is_array(ee()->TMPL->templates_sofar)) {
+        if (! empty(ee()->TMPL->templates_sofar) && is_array(ee()->TMPL->templates_sofar)) {
             foreach (ee()->TMPL->templates_sofar as $templatePath) {
-                if (is_string($templatePath) && strpos($templatePath, '/') !== false) {
-                    $parts = explode('/', $templatePath);
-                    if (count($parts) >= 2 && !$this->isLayoutTemplate($parts[0], $parts[1])) {
-                        $layoutPath = $this->findLayoutInTemplateFile($parts[0], $parts[1]);
-                        if ($layoutPath) {
-                            return $layoutPath;
-                        }
-                    }
+                if (! is_string($templatePath) || strpos($templatePath, '/') === false) {
+                    continue;
+                }
+
+                [$group, $name] = explode('/', $templatePath, 2);
+                if ($this->isLayoutTemplate($group, $name)) {
+                    continue;
+                }
+
+                $layoutPath = $this->findLayoutInTemplateFile($group, $name);
+                if ($layoutPath) {
+                    return $this->normalizeTemplatePath($layoutPath);
                 }
             }
         }
@@ -893,9 +861,6 @@ class Log extends AbstractRoute
         return null;
     }
 
-    /**
-     * Check if a template is a layout by examining its content for {layout:contents}
-     */
     protected function isLayoutTemplateByContent(string $group, string $name): bool
     {
         if (!$group || !$name) {
@@ -937,9 +902,6 @@ class Log extends AbstractRoute
         return false;
     }
 
-    /**
-     * Find the layout tag in a template file
-     */
     protected function findLayoutInTemplateFile(string $group, string $name): ?string
     {
         $template = ee('Model')->get('Template')
@@ -974,9 +936,6 @@ class Log extends AbstractRoute
         return null;
     }
 
-    /**
-     * Detect the main (content) template that initiated the page request
-     */
     protected function detectMainTemplate(): ?string
     {
         $currentGroup = ee()->TMPL->group_name ?? '';
@@ -1389,7 +1348,7 @@ class Log extends AbstractRoute
 
         // Method 8: If we detected a layout and nothing else worked, it means
         // the tag is in the layout template
-        $layoutTemplate = $this->detectLayoutTemplate();
+        $layoutTemplate = $this->detectSingleLayoutFromRuntime();
         if ($layoutTemplate) {
             return $layoutTemplate;
         }

@@ -8,5 +8,4 @@ return [
     'author_url'        => 'https://creativearc.com',
     'namespace'         => 'CreativeArc\ArcHaystack',
     'settings_exist'    => true,
-    'extensions'        => true,
 ];

@@ -79,6 +79,69 @@ trait BuildsTemplateGrid
             }
         }
 
+        // Expand each logged item into its full nested layout chain so parent
+        // layouts are marked active in Site Template Status as well.
+        $layoutChainLogs = ee()->db->query("
+            SELECT main_template, layout_template, logged_at
+            FROM {$dbp}arc_haystack_logs
+            WHERE (main_template IS NOT NULL AND main_template != '')
+               OR (layout_template IS NOT NULL AND layout_template != '')
+        ")->result_array();
+
+        foreach ($layoutChainLogs as $row) {
+            $ts = (int) $row['logged_at'];
+            $chain = $this->getLayoutTemplateChainForGrid(
+                $row['main_template'] ?? null,
+                $row['layout_template'] ?? null
+            );
+
+            foreach ($chain as $layoutPath) {
+                if (!isset($logsByPath[$layoutPath]) || $logsByPath[$layoutPath] < $ts) {
+                    $logsByPath[$layoutPath] = $ts;
+                }
+            }
+        }
+
+        // Build a lookup of real embed template paths so we do not treat
+        // non-embed templates (like layouts) as embeds when parsing JSON logs.
+        $embedTemplateRows = ee()->db->query("
+            SELECT tg.group_name, t.template_name
+            FROM {$dbp}templates t
+            INNER JOIN {$dbp}template_groups tg ON t.group_id = tg.group_id
+            WHERE tg.site_id = {$siteId} AND t.template_type = 'embed'
+        ")->result_array();
+
+        $embedTemplatePaths = [];
+        foreach ($embedTemplateRows as $row) {
+            $embedTemplatePaths[$row['group_name'] . '/' . $row['template_name']] = true;
+        }
+
+        // Layout lookup for paths that may appear in embeds_used
+        $layoutTemplateRows = ee()->db->query("
+            SELECT tg.group_name, t.template_name, t.template_data
+            FROM {$dbp}templates t
+            INNER JOIN {$dbp}template_groups tg ON t.group_id = tg.group_id
+            WHERE tg.site_id = {$siteId} AND t.template_type != 'embed'
+        ")->result_array();
+
+        $layoutTemplatePaths = [];
+        foreach ($layoutTemplateRows as $row) {
+            $groupName = (string) $row['group_name'];
+            $templateName = (string) $row['template_name'];
+            $templateData = (string) ($row['template_data'] ?? '');
+
+            $isLayout = strpos($templateData, '{layout:contents}') !== false
+                || stripos($groupName, 'layout') !== false
+                || stripos($groupName, '_layouts') !== false
+                || stripos($groupName, '_layout') !== false
+                || stripos($templateName, 'layout') !== false
+                || stripos($templateName, '_layout') !== false;
+
+            if ($isLayout) {
+                $layoutTemplatePaths[$groupName . '/' . $templateName] = true;
+            }
+        }
+
         // Templates that appeared as embeds or layouts via extension-based logging
         $embedLogs = ee()->db->query("
             SELECT embeds_used, logged_at
@@ -91,6 +154,10 @@ trait BuildsTemplateGrid
             $ts    = (int) $logRow['logged_at'];
             $paths = json_decode($logRow['embeds_used'], true) ?? [];
             foreach ($paths as $path) {
+                if (!isset($embedTemplatePaths[$path]) && !isset($layoutTemplatePaths[$path])) {
+                    continue;
+                }
+
                 if (!isset($logsByPath[$path])) {
                     $logsByPath[$path] = $ts;
                 }
@@ -179,5 +246,98 @@ trait BuildsTemplateGrid
         }
 
         return $grid;
+    }
+
+    protected function getLayoutTemplateChainForGrid($mainTemplatePath, $fallbackLayoutPath = null): array
+    {
+        $chain = [];
+        $visited = [];
+        $current = $this->normalizeTemplatePathForGrid($mainTemplatePath);
+
+        while ($current && ! isset($visited[$current])) {
+            $visited[$current] = true;
+            $next = $this->findLayoutInTemplateForGrid($current);
+
+            if (! $next || isset($visited[$next])) {
+                break;
+            }
+
+            $chain[] = $next;
+            $current = $next;
+        }
+
+        if (empty($chain)) {
+            $fallback = $this->normalizeTemplatePathForGrid($fallbackLayoutPath);
+            if ($fallback) {
+                $chain[] = $fallback;
+            }
+        }
+
+        return $chain;
+    }
+
+    protected function findLayoutInTemplateForGrid(string $templatePath): ?string
+    {
+        static $cache = [];
+        $siteId = (int) ee()->config->item('site_id');
+        $cacheKey = $siteId . '|' . $templatePath;
+
+        if (array_key_exists($cacheKey, $cache)) {
+            return $cache[$cacheKey];
+        }
+
+        [$groupName, $templateName] = explode('/', $templatePath, 2);
+
+        $template = ee('Model')->get('Template')
+            ->with('TemplateGroup')
+            ->filter('template_name', $templateName)
+            ->filter('TemplateGroup.group_name', $groupName)
+            ->filter('TemplateGroup.site_id', $siteId)
+            ->first();
+
+        if (! $template) {
+            $cache[$cacheKey] = null;
+            return null;
+        }
+
+        $content = $template->template_data ?? '';
+        if (is_string($content) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $content, $matches)) {
+            $cache[$cacheKey] = $this->normalizeTemplatePathForGrid($matches[1]);
+            return $cache[$cacheKey];
+        }
+
+        $filePath = $template->getFilePath();
+        if ($filePath && file_exists($filePath)) {
+            $fileContent = file_get_contents($filePath);
+            if (is_string($fileContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $fileContent, $matches)) {
+                $cache[$cacheKey] = $this->normalizeTemplatePathForGrid($matches[1]);
+                return $cache[$cacheKey];
+            }
+        }
+
+        $cache[$cacheKey] = null;
+        return null;
+    }
+
+    protected function normalizeTemplatePathForGrid($path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+        if ($path === '' || strpos($path, '/') === false) {
+            return null;
+        }
+
+        [$group, $name] = explode('/', $path, 2);
+        $group = trim($group);
+        $name = trim($name);
+
+        if ($group === '' || $name === '') {
+            return null;
+        }
+
+        return $group . '/' . $name;
     }
 }

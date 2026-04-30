@@ -50,9 +50,7 @@ class Arc_haystack_upd extends Installer
             $this->createSettingsTable();
         }
 
-        if (version_compare($current, '1.6.0', '<')) {
-            $this->activate_extension();
-        }
+        parent::update($current);
 
         return true;
     }

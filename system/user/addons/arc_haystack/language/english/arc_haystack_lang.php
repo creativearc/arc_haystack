@@ -51,6 +51,7 @@ $lang = [
     // Table headers - Index
     'main_template' => 'Main Template',
     'layout' => 'Layout',
+    'layouts' => 'Layouts',
     'called_from' => 'Called From',
     'page_url' => 'Page URL',
     'embeds' => 'Embeds',

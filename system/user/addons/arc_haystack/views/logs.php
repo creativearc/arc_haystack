@@ -1,9 +1,10 @@
 <?php echo ee('CP/Alert')->getAllInlines(); ?>
 <?php
-function arcLogSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam, $dirParam) {
+function arcLogSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortParam, $dirParam)
+{
     $newDir = ($currentSort === $col && $currentDir === 'asc') ? 'desc' : 'asc';
-    $indicator = $currentSort === $col ? ($currentDir === 'asc' ? ' ▲' : ' ▼') : '';
-    $sep = strpos($baseUrl, '?') !== -1 ? '&' : '?';
+    $indicator = $currentSort === $col ? ($currentDir === 'asc' ? ' [^]' : ' [v]') : '';
+    $sep = strpos($baseUrl, '?') !== false ? '&' : '?';
     $url = $baseUrl . $sep . $sortParam . '=' . urlencode($col) . '&' . $dirParam . '=' . urlencode($newDir);
     return '<th><a href="' . htmlspecialchars($url) . '" style="color:inherit;text-decoration:none;white-space:nowrap;">' . htmlspecialchars($label) . $indicator . '</a></th>';
 }
@@ -52,8 +53,8 @@ function arcLogSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortPa
                 <table class="table-list">
                     <thead>
                         <tr>
-                            <?php echo arcLogSortTh(lang('main_template'), 'main_template', $log_sort, $log_dir, $log_sort_base_url, 'log_sort', 'log_dir'); ?>
                             <?php echo arcLogSortTh(lang('page_url'),      'page_url',      $log_sort, $log_dir, $log_sort_base_url, 'log_sort', 'log_dir'); ?>
+                            <th><?php echo lang('layouts'); ?></th>
                             <th><?php echo lang('embeds'); ?></th>
                             <th><?php echo lang('partials'); ?></th>
                             <th><?php echo lang('variables'); ?></th>
@@ -65,13 +66,6 @@ function arcLogSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortPa
                         <?php foreach ($logs as $log): ?>
                             <tr>
                                 <td>
-                                    <?php if (! empty($log['main_template'])): ?>
-                                        <code><?php echo htmlspecialchars($log['main_template']); ?></code>
-                                    <?php else: ?>
-                                        <code><?php echo htmlspecialchars($log['template_path']); ?></code>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
                                     <?php
                                         $parsedUrl    = parse_url($log['page_url']);
                                         $relativePath = ($parsedUrl['path'] ?? '/');
@@ -82,6 +76,13 @@ function arcLogSortTh($label, $col, $currentSort, $currentDir, $baseUrl, $sortPa
                                     <a href="<?php echo htmlspecialchars($log['page_url']); ?>" target="_blank" rel="noopener" title="<?php echo htmlspecialchars($log['page_url']); ?>">
                                         <?php echo htmlspecialchars(strlen($relativePath) > 50 ? substr($relativePath, 0, 50) . '...' : $relativePath); ?>
                                     </a>
+                                </td>
+                                <td class="text-center">
+                                    <?php if ($log['layouts_count'] > 0): ?>
+                                        <span class="st-info"><?php echo $log['layouts_count']; ?></span>
+                                    <?php else: ?>
+                                        <span class="txt-muted">0</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="text-center">
                                     <?php if ($log['embeds_count'] > 0): ?>

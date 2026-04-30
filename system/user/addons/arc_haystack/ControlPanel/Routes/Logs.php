@@ -9,6 +9,7 @@ class Logs extends AbstractRoute
 {
     protected $route_path    = 'logs';
     protected $cp_page_title = 'template_usage_logs_title';
+    protected $layoutCountCache = [];
 
     public function process($id = false)
     {
@@ -22,7 +23,7 @@ class Logs extends AbstractRoute
         $page    = (int) ee('Request')->get('page', 1);
         $offset  = ($page - 1) * $perPage;
 
-        $logSortAllowed = ['main_template', 'page_url', 'logged_at'];
+        $logSortAllowed = ['page_url', 'logged_at'];
         $logSortCol = in_array(ee('Request')->get('log_sort'), $logSortAllowed)
             ? ee('Request')->get('log_sort') : 'logged_at';
         $logSortDir = ee('Request')->get('log_dir') === 'asc' ? 'asc' : 'desc';
@@ -45,6 +46,10 @@ class Logs extends AbstractRoute
 
             $formattedLogs[] = array_merge($log, [
                 'logged_at'       => ee()->localize->human_time($log['logged_at']),
+                'layouts_count'   => $this->getLayoutCount(
+                    ! empty($log['main_template']) ? $log['main_template'] : ($log['template_path'] ?? null),
+                    $log['layout_template'] ?? null
+                ),
                 'embeds_count'    => is_array($embedsUsed)    ? count($embedsUsed)    : 0,
                 'partials_count'  => is_array($partialsUsed)  ? count($partialsUsed)  : 0,
                 'variables_count' => is_array($variablesUsed) ? count($variablesUsed) : 0,
@@ -94,5 +99,88 @@ class Logs extends AbstractRoute
         ee()->functions->redirect(
             ee('CP/URL')->make('addons/settings/arc_haystack/logs')->compile()
         );
+    }
+
+    protected function getLayoutCount($mainTemplatePath, $layoutTemplate = null): int
+    {
+        $cacheKey = (string) $mainTemplatePath . '|' . (string) $layoutTemplate;
+        if (isset($this->layoutCountCache[$cacheKey])) {
+            return $this->layoutCountCache[$cacheKey];
+        }
+
+        $count = 0;
+        $visited = [];
+        $current = $this->normalizeTemplatePath($mainTemplatePath);
+
+        while ($current && ! isset($visited[$current])) {
+            $visited[$current] = true;
+            $layoutPath = $this->findLayoutInTemplate($current);
+            if (! $layoutPath || isset($visited[$layoutPath])) {
+                break;
+            }
+
+            $count++;
+            $current = $layoutPath;
+        }
+
+        if ($count === 0 && is_string($layoutTemplate) && trim($layoutTemplate) !== '') {
+            $count = 1;
+        }
+
+        $this->layoutCountCache[$cacheKey] = $count;
+        return $count;
+    }
+
+    protected function normalizeTemplatePath($path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+        if ($path === '' || strpos($path, '/') === false) {
+            return null;
+        }
+
+        [$group, $name] = explode('/', $path, 2);
+        $group = trim($group);
+        $name = trim($name);
+
+        if ($group === '' || $name === '') {
+            return null;
+        }
+
+        return $group . '/' . $name;
+    }
+
+    protected function findLayoutInTemplate(string $templatePath): ?string
+    {
+        [$groupName, $templateName] = explode('/', $templatePath, 2);
+
+        $template = ee('Model')->get('Template')
+            ->with('TemplateGroup')
+            ->filter('template_name', $templateName)
+            ->filter('TemplateGroup.group_name', $groupName)
+            ->filter('TemplateGroup.site_id', ee()->config->item('site_id'))
+            ->first();
+
+        if (! $template) {
+            return null;
+        }
+
+        $content = $template->template_data ?? '';
+        if (is_string($content) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $content, $matches)) {
+            return $this->normalizeTemplatePath($matches[1]);
+        }
+
+        $filePath = $template->getFilePath();
+        if ($filePath && file_exists($filePath)) {
+            $fileContent = file_get_contents($filePath);
+            if (is_string($fileContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $fileContent, $matches)) {
+                return $this->normalizeTemplatePath($matches[1]);
+            }
+        }
+
+        return null;
     }
 }

@@ -57,10 +57,13 @@ class View extends AbstractRoute
         // Get template info for the main template
         $mainTemplateInfo = $this->getTemplateInfo($mainTemplatePath);
 
-        // Get layout template info (if available)
-        $layoutTemplateInfo = null;
-        if ($layoutTemplatePath) {
-            $layoutTemplateInfo = $this->getTemplateInfo($layoutTemplatePath);
+        // Get full layout template chain info (if available)
+        $layoutTemplatePaths = $this->getLayoutTemplateChain($mainTemplatePath, $layoutTemplatePath);
+        $layoutTemplateInfos = [];
+        foreach ($layoutTemplatePaths as $layoutPath) {
+            $layoutInfo = $this->getTemplateInfo($layoutPath);
+            $layoutInfo['display_path'] = $layoutPath;
+            $layoutTemplateInfos[] = $layoutInfo;
         }
 
         // Get called_from template info (if available)
@@ -103,7 +106,8 @@ class View extends AbstractRoute
         $vars = [
             'log'              => $logData,
             'main_template'    => $mainTemplateInfo,
-            'layout_template'  => $layoutTemplateInfo,
+            'layout_template'  => $layoutTemplateInfos[0] ?? null,
+            'layout_templates' => $layoutTemplateInfos,
             'called_from'      => $calledFromInfo,
             'embeds'           => $embedsInfo,
             'partials'         => $partialsInfo,
@@ -275,6 +279,87 @@ class View extends AbstractRoute
             'is_global'   => $variable->site_id == 0,
             'edit_url'    => ee('CP/URL')->make('design/variables/edit/' . $variable->variable_id),
         ];
+    }
+
+    protected function getLayoutTemplateChain(string $mainTemplatePath, ?string $fallbackLayoutPath = null): array
+    {
+        $chain = [];
+        $visited = [];
+        $current = $this->normalizeTemplatePath($mainTemplatePath);
+
+        while ($current && ! isset($visited[$current])) {
+            $visited[$current] = true;
+            $next = $this->findLayoutInTemplate($current);
+
+            if (! $next || isset($visited[$next])) {
+                break;
+            }
+
+            $chain[] = $next;
+            $current = $next;
+        }
+
+        if (empty($chain)) {
+            $fallback = $this->normalizeTemplatePath($fallbackLayoutPath);
+            if ($fallback) {
+                $chain[] = $fallback;
+            }
+        }
+
+        return $chain;
+    }
+
+    protected function findLayoutInTemplate(string $templatePath): ?string
+    {
+        [$groupName, $templateName] = explode('/', $templatePath, 2);
+
+        $template = ee('Model')->get('Template')
+            ->with('TemplateGroup')
+            ->filter('template_name', $templateName)
+            ->filter('TemplateGroup.group_name', $groupName)
+            ->filter('TemplateGroup.site_id', ee()->config->item('site_id'))
+            ->first();
+
+        if (! $template) {
+            return null;
+        }
+
+        $content = $template->template_data ?? '';
+        if (is_string($content) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $content, $matches)) {
+            return $this->normalizeTemplatePath($matches[1]);
+        }
+
+        $filePath = $template->getFilePath();
+        if ($filePath && file_exists($filePath)) {
+            $fileContent = file_get_contents($filePath);
+            if (is_string($fileContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $fileContent, $matches)) {
+                return $this->normalizeTemplatePath($matches[1]);
+            }
+        }
+
+        return null;
+    }
+
+    protected function normalizeTemplatePath(?string $path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+        if ($path === '' || strpos($path, '/') === false) {
+            return null;
+        }
+
+        [$group, $name] = explode('/', $path, 2);
+        $group = trim($group);
+        $name = trim($name);
+
+        if ($group === '' || $name === '') {
+            return null;
+        }
+
+        return $group . '/' . $name;
     }
 
 }

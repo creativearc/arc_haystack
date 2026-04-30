@@ -150,7 +150,7 @@ class Templates extends AbstractRoute
     {
         // Detect if we're inside a layout and get the original content template
         $originalTemplate = $this->detectOriginalTemplate();
-        $layoutPath = $this->detectLayoutTemplate();
+        $layoutPaths = $this->detectLayoutTemplates($originalTemplate);
 
         // Check if the current template appears to be a layout
         $currentGroup = ee()->TMPL->group_name ?? '';
@@ -181,11 +181,11 @@ class Templates extends AbstractRoute
             }
         }
 
-        // Add the layout template if detected
-        if ($layoutPath) {
-            $layoutParts = explode('/', $layoutPath);
+        // Add detected layout templates (supports nested layouts)
+        foreach ($layoutPaths as $layoutPath) {
+            $layoutParts = explode('/', $layoutPath, 2);
             $layoutGroup = $layoutParts[0] ?? '';
-            $layoutName = $layoutParts[1] ?? $layoutParts[0];
+            $layoutName = $layoutParts[1] ?? '';
 
             $key = 'template:' . $layoutGroup . '/' . $layoutName;
             if (!isset($seen[$key]) && $layoutGroup && $layoutName) {
@@ -196,7 +196,9 @@ class Templates extends AbstractRoute
                 ];
                 $seen[$key] = true;
             }
-        } elseif ($isInLayoutTemplate && $currentGroup && $currentName) {
+        }
+
+        if (empty($layoutPaths) && $isInLayoutTemplate && $currentGroup && $currentName) {
             // We're inside a layout template but didn't detect it via other methods
             // Add the current template as the layout
             $key = 'template:' . $currentGroup . '/' . $currentName;
@@ -239,11 +241,11 @@ class Templates extends AbstractRoute
             $templatesToScan[$key] = $originalTemplate;
         }
 
-        // 3. Include the layout template (if detected via detectLayoutTemplate)
-        if ($layoutPath) {
-            $layoutParts = explode('/', $layoutPath);
+        // 3. Include detected layout templates
+        foreach ($layoutPaths as $layoutPath) {
+            $layoutParts = explode('/', $layoutPath, 2);
             $layoutGroup = $layoutParts[0] ?? '';
-            $layoutName = $layoutParts[1] ?? $layoutParts[0];
+            $layoutName = $layoutParts[1] ?? '';
             if ($layoutGroup && $layoutName) {
                 $templatesToScan[$layoutGroup . '/' . $layoutName] = [
                     'group' => $layoutGroup,
@@ -1267,8 +1269,11 @@ class Templates extends AbstractRoute
             $templatesToScan[] = [$originalTemplate['group'], $originalTemplate['name']];
         }
 
-        $layoutTemplate = $this->detectLayoutTemplate();
-        if ($layoutTemplate && strpos($layoutTemplate, '/') !== false) {
+        foreach ($this->detectLayoutTemplates($originalTemplate) as $layoutTemplate) {
+            if (strpos($layoutTemplate, '/') === false) {
+                continue;
+            }
+
             [$lg, $ln] = explode('/', $layoutTemplate, 2);
             if ($lg && $ln) {
                 $templatesToScan[] = [$lg, $ln];
@@ -1442,83 +1447,186 @@ class Templates extends AbstractRoute
      */
     protected function detectLayoutTemplate(): ?string
     {
-        // Method 1: Check ee()->TMPL->layout_name (standard EE property)
-        if (!empty(ee()->TMPL->layout_name)) {
-            return ee()->TMPL->layout_name;
+        $layouts = $this->detectLayoutTemplates();
+        return $layouts[0] ?? null;
+    }
+
+    protected function detectLayoutTemplates(?array $originalTemplate = null): array
+    {
+        $layouts = [];
+
+        if ($originalTemplate && ! empty($originalTemplate['group']) && ! empty($originalTemplate['name'])) {
+            $layouts = $this->getNestedLayoutTemplates($originalTemplate['group'] . '/' . $originalTemplate['name']);
+        } else {
+            $currentGroup = ee()->TMPL->group_name ?? '';
+            $currentName = ee()->TMPL->template_name ?? '';
+            if ($currentGroup && $currentName && ! $this->isLayoutTemplate($currentGroup, $currentName)) {
+                $layouts = $this->getNestedLayoutTemplates($currentGroup . '/' . $currentName);
+            }
         }
 
-        // Method 2: Check ee()->TMPL->layout property (EE7+ may use this)
-        if (!empty(ee()->TMPL->layout)) {
+        if (empty($layouts)) {
+            $runtimeLayout = $this->detectSingleLayoutFromRuntime();
+            if ($runtimeLayout) {
+                $layouts = $this->getNestedLayoutTemplates($runtimeLayout, true);
+                array_unshift($layouts, $runtimeLayout);
+            }
+        }
+
+        return array_values(array_unique(array_filter($layouts, function ($path) {
+            return is_string($path) && strpos($path, '/') !== false;
+        })));
+    }
+
+    protected function getNestedLayoutTemplates(string $templatePath, bool $followFromSelf = false): array
+    {
+        $templatePath = $this->normalizeTemplatePath($templatePath);
+        if (! $templatePath) {
+            return [];
+        }
+
+        $chain = [];
+        $visited = [];
+        $current = $templatePath;
+
+        while ($current && ! isset($visited[$current])) {
+            $visited[$current] = true;
+
+            [$group, $name] = explode('/', $current, 2);
+            $next = $this->findLayoutInTemplateFile($group, $name);
+            $next = $next ? $this->normalizeTemplatePath($next) : null;
+
+            if (! $next || isset($visited[$next])) {
+                break;
+            }
+
+            $chain[] = $next;
+            $current = $next;
+        }
+
+        if ($followFromSelf && ! empty($chain) && $chain[0] === $templatePath) {
+            array_shift($chain);
+        }
+
+        return $chain;
+    }
+
+    protected function normalizeTemplatePath(?string $path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+        if ($path === '' || strpos($path, '/') === false) {
+            return null;
+        }
+
+        [$group, $name] = explode('/', $path, 2);
+        $group = trim($group);
+        $name = trim($name);
+
+        if ($group === '' || $name === '') {
+            return null;
+        }
+
+        return $group . '/' . $name;
+    }
+
+    protected function findLayoutInTemplateFile(string $groupName, string $templateName): ?string
+    {
+        $template = ee('Model')->get('Template')
+            ->with('TemplateGroup')
+            ->filter('template_name', $templateName)
+            ->filter('TemplateGroup.group_name', $groupName)
+            ->filter('TemplateGroup.site_id', ee()->config->item('site_id'))
+            ->first();
+
+        if (! $template) {
+            return null;
+        }
+
+        $rawContent = $template->template_data ?? '';
+        if (! empty($rawContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $rawContent, $matches)) {
+            return $this->normalizeTemplatePath($matches[1]);
+        }
+
+        $filePath = $template->getFilePath();
+        if ($filePath && file_exists($filePath)) {
+            $fileContent = file_get_contents($filePath);
+            if (! empty($fileContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $fileContent, $matches)) {
+                return $this->normalizeTemplatePath($matches[1]);
+            }
+        }
+
+        return null;
+    }
+
+    protected function detectSingleLayoutFromRuntime(): ?string
+    {
+        if (! empty(ee()->TMPL->layout_name)) {
+            return $this->normalizeTemplatePath(ee()->TMPL->layout_name);
+        }
+
+        if (! empty(ee()->TMPL->layout)) {
             if (is_string(ee()->TMPL->layout)) {
-                return ee()->TMPL->layout;
+                return $this->normalizeTemplatePath(ee()->TMPL->layout);
             }
-            if (is_array(ee()->TMPL->layout) && !empty(ee()->TMPL->layout['template'])) {
-                return ee()->TMPL->layout['template'];
-            }
-        }
-
-        // Method 3: Check ee()->TMPL->layout_vars for layout info
-        if (!empty(ee()->TMPL->layout_vars) && is_array(ee()->TMPL->layout_vars)) {
-            if (!empty(ee()->TMPL->layout_vars['layout:template'])) {
-                return ee()->TMPL->layout_vars['layout:template'];
+            if (is_array(ee()->TMPL->layout) && ! empty(ee()->TMPL->layout['template'])) {
+                return $this->normalizeTemplatePath(ee()->TMPL->layout['template']);
             }
         }
 
-        // Method 4: Parse template log for layout references
-        if (!empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
+        if (! empty(ee()->TMPL->layout_vars) && is_array(ee()->TMPL->layout_vars) && ! empty(ee()->TMPL->layout_vars['layout:template'])) {
+            return $this->normalizeTemplatePath(ee()->TMPL->layout_vars['layout:template']);
+        }
+
+        if (! empty(ee()->TMPL->log) && is_array(ee()->TMPL->log)) {
             foreach (ee()->TMPL->log as $logEntry) {
-                if (is_string($logEntry)) {
-                    // Match "Layout Template: group/template" or similar
-                    if (preg_match('/Layout(?:\s+Template)?[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
-                    // Match "Processing Layout: group/template"
-                    if (preg_match('/Processing Layout[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
-                    // Match "{layout="group/template"}" pattern in log
-                    if (preg_match('/\{layout=["\']?([^\/\s"\']+)\/([^\s"\'\}]+)/i', $logEntry, $matches)) {
-                        return $matches[1] . '/' . $matches[2];
-                    }
+                if (! is_string($logEntry)) {
+                    continue;
+                }
+
+                if (preg_match('/Layout(?:\s+Template)?[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
+                }
+                if (preg_match('/Processing Layout[:\s]+([^\/\s]+)\/([^\s\)]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
+                }
+                if (preg_match('/\{layout=["\']?([^\/\s"\']+)\/([^\s"\'\}]+)/i', $logEntry, $matches)) {
+                    return $this->normalizeTemplatePath($matches[1] . '/' . $matches[2]);
                 }
             }
         }
 
-        // Method 5: Scan the current template content for {layout=""} tag
-        // This works when the tag is called from within a content template before layout processing
         $templateData = ee()->TMPL->template ?? '';
-        if (!empty($templateData)) {
-            if (preg_match('/\{layout=["\']([^"\']+)["\']/i', $templateData, $matches)) {
-                return $matches[1];
-            }
+        if (! empty($templateData) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $templateData, $matches)) {
+            return $this->normalizeTemplatePath($matches[1]);
         }
 
-        // Method 6: Check the original template file for layout tag
-        // Useful when template data has already been partially processed
         $groupName = ee()->TMPL->group_name ?? '';
         $templateName = ee()->TMPL->template_name ?? '';
-
         if ($groupName && $templateName) {
-            $template = ee('Model')->get('Template')
-                ->with('TemplateGroup')
-                ->filter('template_name', $templateName)
-                ->filter('TemplateGroup.group_name', $groupName)
-                ->filter('TemplateGroup.site_id', ee()->config->item('site_id'))
-                ->first();
+            $layoutPath = $this->findLayoutInTemplateFile($groupName, $templateName);
+            if ($layoutPath) {
+                return $layoutPath;
+            }
+        }
 
-            if ($template) {
-                $rawContent = $template->template_data ?? '';
-                if (!empty($rawContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $rawContent, $matches)) {
-                    return $matches[1];
+        if (! empty(ee()->TMPL->templates_sofar) && is_array(ee()->TMPL->templates_sofar)) {
+            foreach (ee()->TMPL->templates_sofar as $templatePath) {
+                if (! is_string($templatePath) || strpos($templatePath, '/') === false) {
+                    continue;
                 }
 
-                // Also check the file if templates are saved as files
-                $filePath = $template->getFilePath();
-                if ($filePath && file_exists($filePath)) {
-                    $fileContent = file_get_contents($filePath);
-                    if (!empty($fileContent) && preg_match('/\{layout=["\']([^"\']+)["\']/i', $fileContent, $matches)) {
-                        return $matches[1];
-                    }
+                [$group, $name] = explode('/', $templatePath, 2);
+                if ($this->isLayoutTemplate($group, $name)) {
+                    continue;
+                }
+
+                $layoutPath = $this->findLayoutInTemplateFile($group, $name);
+                if ($layoutPath) {
+                    return $layoutPath;
                 }
             }
         }
